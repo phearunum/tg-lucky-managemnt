@@ -1,0 +1,35 @@
+database:
+  host: 127.0.0.1
+  username: telegram_bot_db
+  password: P@ssw0rd
+  name: telegram_bot_db
+  port: 3306
+  driver: mysql
+redis:
+  host: 127.0.0.1
+  port: 6379
+  db: 2
+  password: redis@password
+secret_key: uhbi49y823ry78923ijrgu803289u3ui23
+RabbitMQURL: "amqp://admin:123@192.168.50.102:5672/"
+service:
+  port: 80
+  timeZone: "Asia/Phnom_Penh"
+  logPtah: "logs/service-snap.log"
+  http: true
+  rabbitmq: false
+telegram:
+  status: true
+  bots:
+    - name: "xxxxx"
+      status: false
+      debug: false
+      token: "xxxxxxx:AAEmBE-cEnlHpqRu6Di3eXiVMUsnClqIkzI"
+      groupId: -xxxxxx
+      back_button: true
+    - name: "xxxxx"
+      status: true
+      debug: false
+      token: "xxxxxx:AAFKWDPe1O4t1nTvLIxXUeREt3foywstcIY"
+      groupId: -xxxxx
+      back_button: false
