@@ -1,0 +1,54 @@
+version: "3"
+x-common-variables: &common-env
+  TAG: 20250328-UAT-01
+  REGISTRY: registry.gitlab.com/devops1900003/golang
+
+services:
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: nginx-bot-proxy
+    environment:
+      - TZ=Asia/Phnom_Penh
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - lucky-service
+      - lucky-admin
+    networks:
+      - app-network
+  lucky-admin:
+    build:
+      context: ./admin-lucky
+    platform: linux/amd64
+    image: "phearunum/lucky-admin:${TAG}"
+    container_name: lucky-admin
+    volumes:
+      - ./lucky-admin/dist:/usr/share/nginx/html
+    environment:
+      - TZ=Asia/Phnom_Penh
+    ports:
+      - "8001:80"
+    networks:
+      - app-network
+  lucky-service:
+    build:
+      context: ./api-service
+    platform: linux/amd64
+    image: "phearunum/lucky-service:${TAG}"
+    restart: always
+    hostname: lucky-service
+    container_name: lucky-service
+    environment:
+      - TZ=Asia/Phnom_Penh
+    ports:
+      - 3000:80
+    volumes:
+      - ./config.yml:/app/config/config.yml
+      - ./service-account.json:/app/config/service-account.json
+    networks:
+      - app-network
+networks:
+  app-network:
+    driver: bridge

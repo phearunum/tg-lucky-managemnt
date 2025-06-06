@@ -1,0 +1,853 @@
+package telegram
+
+import (
+	redis "api-service/config"
+	"api-service/lib/telegram/model"
+	repository "api-service/lib/telegram/repository"
+	"api-service/utils"
+	"encoding/json"
+	"fmt"
+	"log"
+	"math"
+	"strconv"
+	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+type TelegramBotService struct {
+	repo *repository.TelegramAccountRepository
+}
+
+func NewTelegramBotService(repo *repository.TelegramAccountRepository) *TelegramBotService {
+	return &TelegramBotService{repo: repo}
+}
+
+type RequestSettingDTO struct {
+	ID         uint    `json:"id"`
+	Name       string  `json:"name"`
+	TimeRest   float64 `json:"time_rest"`
+	Status     string  `json:"status"`
+	ButtonType string  `json:"button_type"`
+}
+type LocationSettingDTO struct {
+	ID       uint    `json:"id"`
+	Name     string  `json:"name"`
+	Lat      string  `json:"lat"`
+	Long     string  `json:"long"`
+	BotToken string  `json:"token_bot"`
+	Allow    float64 `json:"allow"`
+}
+type Bot struct {
+	Name    string
+	Token   string
+	Debug   bool
+	GroupID int64
+	Repo    *repository.TelegramAccountRepository
+}
+
+func InitializeRedis(token string) {
+
+}
+func NewBot(name, token string, debug bool, groupID int64, repo *repository.TelegramAccountRepository) *Bot {
+	// Init
+	keybords, errf := repo.FilterRequestSettingAll()
+	if errf != nil {
+		log.Println("Failed to acknowledge callback query:", errf)
+	}
+	utils.InfoLog(keybords, "Init Redis Bot keybords")
+	redisKey := fmt.Sprintf("request:bot:%s", "setting")
+	if err := redis.SetWithoutExpired(redisKey, keybords); err != nil {
+		utils.WarnLog(err.Error(), "Error Redis Init")
+	}
+	// Init Location
+
+	locations, errL := repo.GetLocationSettingAll()
+	if errL != nil {
+		log.Println("Failed to acknowledge callback query:", errL)
+
+	}
+	utils.InfoLog(locations, "Init Redis Bot Location")
+	// Marshal locations into a JSON byte slice
+	locationsBytes, err := json.Marshal(locations)
+	if err != nil {
+		utils.ErrorLog(fmt.Errorf("failed to marshal locations: %v", err), err.Error())
+	}
+	// Now unmarshal the JSON byte slice into locationDTO
+	var locationDTO []LocationSettingDTO
+	if err := json.Unmarshal(locationsBytes, &locationDTO); err != nil {
+		utils.ErrorLog(fmt.Errorf("failed to unmarshal value from Redis: %v", err), err.Error())
+	}
+
+	for _, loca := range locationDTO {
+		redisKeyL := fmt.Sprintf("location:bot:%s", loca.Name)
+		if err := redis.SetWithoutExpired(redisKeyL, loca); err != nil {
+			utils.WarnLog(err.Error(), "Error Redis Init")
+		}
+	}
+
+	return &Bot{
+		Name:    name,
+		Token:   token,
+		Debug:   debug,
+		GroupID: groupID,
+		Repo:    repo,
+	}
+}
+func (b *Bot) Start() {
+	log.Printf("Starting bot %s...", b.Name)
+	// Initialize the bot
+	botAPI, err := tgbotapi.NewBotAPI(b.Token)
+	if err != nil {
+		log.Printf("Failed to initialize bot %s: %v", b.Name, err)
+		return
+	}
+
+	log.Printf("Bot %s initialized successfully", b.Name)
+
+	// Set debug mode
+	botAPI.Debug = b.Debug
+	botGroupID := b.GroupID
+
+	log.Printf("Authorized bot %s (%s)", b.Name, botAPI.Self.UserName)
+
+	// Start listening for updates
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+
+	updates := botAPI.GetUpdatesChan(u)
+	log.Printf("Bot %s is now listening for updates...", b.Name)
+
+	// Handle incoming updates
+	for update := range updates {
+		// Handle callback queries (button clicks)
+		if update.CallbackQuery != nil {
+			b.handleCallbackQuery(botAPI, update.CallbackQuery, botGroupID)
+
+			continue
+		}
+
+		// Handle regular messages (only process /start and specific commands)
+		if update.Message != nil {
+			b.handleMessage(botAPI, update.Message)
+
+		}
+	}
+}
+
+// handleMessage handles regular messages
+func (b *Bot) handleMessage(botAPI *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	// Handle /start command
+	//var Username = message.From.FirstName + " " + message.From.LastName
+	//msg.ReplyMarkup = replyKeyboard
+	if message.IsCommand() && message.Command() == "start" {
+		//msg := tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("User: %s, ChatID: %d", Username, message.From.ID))
+		/*
+			keybords, errf := b.Repo.FilterRequestSettingAll()
+			if errf != nil {
+				log.Println("Failed to acknowledge callback query:", errf)
+			}
+
+				var keyboardButtons []tgbotapi.KeyboardButton
+				for _, keyboard := range *keybords {
+					keyboardButtons = append(keyboardButtons, tgbotapi.NewKeyboardButton(keyboard.Name))
+				}
+				// Add additional buttons to the keyboardButtons slice
+				additionalButtons := []tgbotapi.KeyboardButton{}
+				// Add additional buttons
+				keyboardButtons = append(keyboardButtons, additionalButtons...)
+				replyKeyboards := tgbotapi.NewReplyKeyboard(
+					tgbotapi.NewKeyboardButtonRow(keyboardButtons...),
+					tgbotapi.NewKeyboardButtonRow(
+						tgbotapi.NewKeyboardButton("⬅ Back"),
+					),
+				)
+		*/
+		/*
+			replyKeyboard := tgbotapi.NewReplyKeyboard(
+				tgbotapi.NewKeyboardButtonRow(
+					tgbotapi.NewKeyboardButton(" 🍽 Eat"),
+					tgbotapi.NewKeyboardButton(" 🚬 Smoke"),
+					tgbotapi.NewKeyboardButton(" 🚽 WC Big"),
+					tgbotapi.NewKeyboardButton(" 🚾 WC Small"),
+				),
+				tgbotapi.NewKeyboardButtonRow(
+					tgbotapi.NewKeyboardButton("⬅ Back"),
+				),
+			)
+			replyKeyboard.ResizeKeyboard = true
+			replyKeyboard.OneTimeKeyboard = true
+
+			msg.ReplyMarkup = replyKeyboard
+			// msg.ReplyMarkup = b.createInlineKeyboardButton()
+
+			botAPI.Send(msg)*/
+		b.initKeyBoard(botAPI, message)
+
+	}
+	if message.IsCommand() && message.Command() == "keyboard" {
+		msg := tgbotapi.NewMessage(message.Chat.ID, "Alternative keybaord layout")
+		msg.ReplyMarkup = b.createInlineKeyboardButton()
+		botAPI.Send(msg)
+		return
+	}
+
+	b.handleMessageTextDynamic(botAPI, b.GroupID, message)
+	// Ignore other text messages
+	//msg := tgbotapi.NewMessage(message.Chat.ID, "Please use the buttons to interact with the bot.")
+	//botAPI.Send(msg)
+
+}
+func (b *Bot) initKeyBoard(botAPI *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	var Username = message.From.FirstName + " " + message.From.LastName
+	redisServerKey := fmt.Sprintf("request:bot:%s", "setting")
+	SettingInfo, err := redis.Get(redisServerKey)
+	if err != nil {
+		utils.ErrorLog(err.Error(), " Field Get Data from Redis videoSetting:server:%d")
+	}
+
+	var botSetting []RequestSettingDTO
+	if err := json.Unmarshal([]byte(SettingInfo), &botSetting); err != nil {
+		utils.ErrorLog(fmt.Errorf("failed to unmarshal value from Redis: %v", err), err.Error())
+	}
+	var keyboardButtons []tgbotapi.KeyboardButton
+	for _, keyboard := range botSetting {
+		keyboardButtons = append(keyboardButtons, tgbotapi.NewKeyboardButton(keyboard.Name))
+	}
+	// Add additional buttons to the keyboardButtons slice
+	additionalButtons := []tgbotapi.KeyboardButton{}
+	// Add additional buttons
+	keyboardButtons = append(keyboardButtons, additionalButtons...)
+	replyKeyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(keyboardButtons...),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("⬅️ Back"),
+		),
+	)
+	replyKeyboard.ResizeKeyboard = true
+	replyKeyboard.OneTimeKeyboard = true
+	locationKeyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButtonLocation("📍 CheckIn "),
+		),
+	)
+	locationKeyboard.ResizeKeyboard = true
+	locationKeyboard.OneTimeKeyboard = true
+
+	msg := tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("User: %s, ChatID: %d", Username, message.From.ID))
+	msg.ReplyMarkup = locationKeyboard
+	msg.ReplyMarkup = replyKeyboard
+	botAPI.Send(msg)
+}
+func (b *Bot) handleMessageTextDynamic(botAPI *tgbotapi.BotAPI, botGroupID int64, message *tgbotapi.Message) {
+	var Username = message.From.FirstName + " " + message.From.LastName
+	var chatId = message.From.ID
+	var btnText = "🕗 ClockTime "
+	currentTime := time.Now()
+	chatIdStr := strconv.FormatInt(chatId, 10)
+	formattedTime := currentTime.Format("2006-01-02 15:04:05")
+	// Init Case
+	redisServerKey := fmt.Sprintf("request:bot:%s", "setting")
+	SettingInfo, err := redis.Get(redisServerKey)
+	if err != nil {
+		utils.ErrorLog(err.Error(), " Field Get Data from Redis videoSetting:server:%d")
+	}
+
+	var botSetting []RequestSettingDTO
+	if err := json.Unmarshal([]byte(SettingInfo), &botSetting); err != nil {
+		utils.ErrorLog(fmt.Errorf("failed to unmarshal value from Redis: %v", err), err.Error())
+	}
+	var keyboardButtons []tgbotapi.KeyboardButton
+	for _, keyboard := range botSetting {
+
+		keyboardButtons = append(keyboardButtons, tgbotapi.NewKeyboardButton(keyboard.Name))
+
+	}
+	// Send Reply with keyboard
+	additionalButtons := []tgbotapi.KeyboardButton{}
+	// Add additional buttons
+	keyboardButtons = append(keyboardButtons, additionalButtons...)
+	replyKeyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(keyboardButtons...),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("⬅️ Back"),
+		),
+	)
+	replyKeyboard.ResizeKeyboard = true
+	replyKeyboard.OneTimeKeyboard = true
+	// Convert slice to map for faster lookups
+	botSettingMap := make(map[string]RequestSettingDTO, len(botSetting))
+	for _, keyboard := range botSetting {
+		if keyboard.ButtonType == "track" {
+			botSettingMap[keyboard.Name] = keyboard
+		}
+	}
+	keyboard, exists := botSettingMap[message.Text]
+	// Check Allow Location
+	/*
+		const staticLatitude = 10.604656
+		const staticLongitude = 103.541784
+
+		latitude := message.Location.Latitude
+		longitude := message.Location.Longitude
+		// Calculate distance to the static location
+		distance := Haversine(latitude, longitude, staticLatitude, staticLongitude)
+		if distance > 200 {
+			replyMsg := " ⚠️ Warning !You are outside location"
+			msg := tgbotapi.NewMessage(message.Chat.ID, replyMsg)
+			msg.ReplyMarkup = replyKeyboard
+			msg.ParseMode = "Markdown"
+			botAPI.Send(msg)
+			return
+		}*/
+
+	if exists {
+		request := model.UserRequest{
+			ChatID:      chatIdStr,
+			RequestType: keyboard.Name,
+			StartTime:   time.Now().Format("2006-01-02 15:04:05"),
+			Status:      "pending",
+			AccountName: Username,
+		}
+		_, err := b.Repo.SaveRequest(&request)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+
+		msg := tgbotapi.NewMessage(botGroupID, Username+" :  "+keyboard.Name+", 🕗 Time: "+formattedTime)
+		msg.ReplyToMessageID = message.MessageID
+		msg.ReplyMarkup = replyKeyboard
+		botAPI.Send(msg)
+	} else if message.Text == "⬅️ Back" {
+		requestData, err := b.Repo.FilterRequestOne(chatId)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+			return
+		}
+		if requestData == nil {
+			msg := tgbotapi.NewMessage(botGroupID, "🚫 No break...")
+			msg.ReplyToMessageID = message.MessageID
+			msg.ReplyMarkup = replyKeyboard
+			botAPI.Send(msg)
+			return
+		}
+		// Set EndTime as the current time (time.Now())
+		endTime := time.Now()
+		endTimeStr := endTime.Format("2006-01-02 15:04:05")
+
+		fmt.Println("Back Event", requestData)
+		startTimeParsed, _ := time.Parse("2006-01-02 15:04:05", requestData.StartTime)
+		endTimeParsed, _ := time.Parse("2006-01-02 15:04:05", endTimeStr)
+		totalTime := endTimeParsed.Sub(startTimeParsed)
+		totalTimeMinutes := float64(totalTime.Minutes()) // Convert to minutes as an integer
+
+		// Filter Allow time
+		filter, errf := b.Repo.FilterRequestSetting(requestData.RequestType)
+		if errf != nil {
+			log.Println("Failed to acknowledge callback query:", errf)
+			return
+		}
+		var Messagetxt string
+		if totalTimeMinutes > filter.TimeRest {
+			excessMinutes := float64(totalTimeMinutes - filter.TimeRest) // Convert excess to integer
+			Messagetxt = fmt.Sprintf("⚠️ Warning: %.2f min", excessMinutes)
+		} else {
+			Messagetxt = " "
+		}
+		if filter.ButtonType == "normal" || filter.ButtonType == "" {
+			Messagetxt = " "
+		}
+		request := model.UserRequest{
+			ID:          requestData.ID,
+			ChatID:      requestData.ChatID,
+			AccountName: requestData.AccountName,
+			StartTime:   requestData.StartTime,
+			EndTime:     time.Now().Format("2006-01-02 15:04:05"), // Current time as start time
+			Status:      "finished",
+			AllowTime:   filter.TimeRest,
+			TotalTime:   totalTimeMinutes,
+			RequestType: requestData.RequestType, // Default status
+			Message:     Messagetxt,
+			CreatedAt:   requestData.CreatedAt,
+		}
+		_, err = b.Repo.SaveRequest(&request)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+		msg := tgbotapi.NewMessage(botGroupID, Username+" : 🔙  time [ "+requestData.RequestType+" ], 🕗 Time: "+formattedTime+", "+Messagetxt)
+		msg.ReplyToMessageID = message.MessageID
+		msg.ReplyMarkup = replyKeyboard
+		botAPI.Send(msg)
+		return
+	} else if message.Text == "Location" || message.Text == "CheckIn" || message.Text == "Scan" {
+
+		// Step 1: Send the location request button
+		locationKeyboard := tgbotapi.NewReplyKeyboard(
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButtonLocation(btnText),
+			),
+		)
+		locationKeyboard.ResizeKeyboard = true
+		locationKeyboard.OneTimeKeyboard = true
+		if message.Chat.Type == "private" {
+			msg := tgbotapi.NewMessage(message.From.ID, "Please share your location:")
+			msg.ReplyMarkup = locationKeyboard
+			botAPI.Send(msg)
+		} else {
+
+			privateChatLink := fmt.Sprintf("https://t.me/%s", b.Name)
+			msg := tgbotapi.NewMessage(b.GroupID, fmt.Sprintf(
+				"%s  📣 Please [Click here](%s) to [ Check In/Out ]", Username, privateChatLink,
+			))
+			msg.ParseMode = "Markdown"
+			msg.ReplyMarkup = replyKeyboard
+			botAPI.Send(msg)
+		}
+
+	}
+
+	// Step 2: Handle when the user actually sends a location
+	if message.Location != nil {
+		// Send message private
+		locationKeyboard := tgbotapi.NewReplyKeyboard(
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButtonLocation(btnText),
+			),
+		)
+		locationKeyboard.ResizeKeyboard = true
+		locationKeyboard.OneTimeKeyboard = true
+		request := model.ClockTime{
+			ChatID:      chatIdStr,
+			RequestType: "ClockTime",
+			StartTime:   time.Now().Format("2006-01-02 15:04:05"),
+			AccountName: Username,
+			Lat:         fmt.Sprintf("%f", message.Location.Latitude),  // Convert latitude to string
+			Long:        fmt.Sprintf("%f", message.Location.Longitude), // Convert longitude to string
+			BotName:     b.Name,
+		}
+
+		_, err := b.Repo.SaveClockTimeRequest(&request)
+		if err != nil {
+			log.Println("Failed to save clock time request:", err)
+		}
+
+		// Get Location from redis
+		redisServerKey := fmt.Sprintf("location:bot:%s", b.Name)
+		SettingInfo, err := redis.Get(redisServerKey)
+		if err != nil {
+			utils.ErrorLog(err.Error(), " Field Get Data from Redis videoSetting:server:%d")
+		}
+
+		var locationSetting LocationSettingDTO
+		if err := json.Unmarshal([]byte(SettingInfo), &locationSetting); err != nil {
+			utils.ErrorLog(fmt.Errorf("failed to unmarshal value from Redis: %v", err), err.Error())
+		}
+		utils.InfoLog(locationSetting, "locationSetting")
+		staticLatitudeStr := locationSetting.Lat
+		staticLongitudeStr := locationSetting.Long
+		// Convert string to float64
+		staticLatitude, err := strconv.ParseFloat(staticLatitudeStr, 64)
+		if err != nil {
+			log.Printf("Error converting static latitude to float64: %v\n", err)
+			return
+		}
+
+		staticLongitude, err := strconv.ParseFloat(staticLongitudeStr, 64)
+		if err != nil {
+			log.Printf("Error converting static longitude to float64: %v\n", err)
+			return
+		}
+		latitude := message.Location.Latitude
+		longitude := message.Location.Longitude
+		// Calculate distance to the static location
+		distance := Haversine(staticLatitude, staticLongitude, latitude, longitude)
+		// Default value if Allow is null or empty
+		allow := 200.0 // Default value
+
+		if locationSetting.Allow != 0 {
+			allow = locationSetting.Allow
+		}
+		utils.InfoLog(distance, "Clock distance")
+		utils.InfoLog(allow, "Allow Clock")
+		utils.InfoLog(latitude, "User latitude")
+		utils.InfoLog(longitude, "User longitude")
+		if distance > allow {
+			replyMsg := " ⚠️ Warning !You are outside location"
+			msg := tgbotapi.NewMessage(message.Chat.ID, replyMsg)
+			msg.ReplyMarkup = locationKeyboard
+			msg.ParseMode = "Markdown"
+			botAPI.Send(msg)
+			return
+		}
+		replyMsg := fmt.Sprintf(
+			btnText+" !\n🕗 Time: %s\nLatitude: %.6f\nLongitude: %.6f\n",
+			formattedTime, latitude, longitude,
+		)
+
+		msg := tgbotapi.NewMessage(message.Chat.ID, replyMsg)
+		msg.ReplyMarkup = locationKeyboard
+		msg.ParseMode = "Markdown"
+		botAPI.Send(msg)
+
+		// Forward location to the group
+		groupMsg := tgbotapi.NewMessage(
+			b.GroupID,
+			fmt.Sprintf("%s : %s, 🕗 Time: %s, Latitude: %.6f, Longitude: %.6f\n",
+				Username, btnText, formattedTime, latitude, longitude),
+		)
+		groupMsg.ParseMode = "Markdown"
+		groupMsg.ReplyMarkup = replyKeyboard
+		botAPI.Send(groupMsg)
+	}
+
+}
+func (b *Bot) RequestLiveLocation(botAPI *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	// Step 1: Send the location request button
+	locationKeyboard := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButtonLocation(" Clock Time"), // Button text
+		),
+	)
+	locationKeyboard.ResizeKeyboard = true
+	locationKeyboard.OneTimeKeyboard = true
+
+	if message.Chat.Type == "private" {
+		// In private chat, send the live location request directly
+		msg := tgbotapi.NewMessage(message.From.ID,
+			"Please share your *live location* by clicking the button below and selecting 'Share My Live Location'.",
+		)
+		msg.ReplyMarkup = locationKeyboard
+		msg.ParseMode = "Markdown"
+		botAPI.Send(msg)
+	} else {
+		// In group chat, prompt the user to go to private chat
+		privateChatLink := fmt.Sprintf("https://t.me/%s", b.Name)
+		msg := tgbotapi.NewMessage(b.GroupID, fmt.Sprintf(
+			"%s 📣 Please [click here](%s) to share your *live location* for [Check In/Out].",
+			message.From.UserName, privateChatLink,
+		))
+		msg.ParseMode = "Markdown"
+		botAPI.Send(msg)
+	}
+}
+
+func (b *Bot) handleMessageText(botAPI *tgbotapi.BotAPI, botGroupID int64, message *tgbotapi.Message) {
+	var Username = message.From.FirstName + " " + message.From.LastName
+	var chatId = message.From.ID
+	currentTime := time.Now()
+	chatIdStr := strconv.FormatInt(chatId, 10)
+	formattedTime := currentTime.Format("15:04:05")
+
+	// Acknowledge the callback query with an alert
+	switch message.Text {
+	case "📌 Pin":
+
+	case "🍽 Eat":
+		request := model.UserRequest{
+			ChatID:      chatIdStr,
+			RequestType: "🍽 Eat",
+			StartTime:   time.Now().Format("15:04:05"), // Current time as start time
+			Status:      "pending",
+
+			AccountName: Username,
+		}
+		_, err := b.Repo.SaveRequest(&request)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+		msg := tgbotapi.NewMessage(botGroupID, Username+" :  [ 🍽 Eat ], 🕗 Time: "+formattedTime)
+		msg.ReplyToMessageID = message.MessageID
+		botAPI.Send(msg)
+	case "🚬 Smoke":
+		request := model.UserRequest{
+			ChatID:      chatIdStr,
+			RequestType: "🚬 Smoke",
+			StartTime:   time.Now().Format("15:04:05"), // Current time as start time
+			Status:      "pending",
+			AccountName: Username,
+		}
+		_, err := b.Repo.SaveRequest(&request)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+		msg := tgbotapi.NewMessage(botGroupID, Username+" :  [ 🚬 Smoke ], 🕗 Time: "+formattedTime)
+		msg.ReplyToMessageID = message.MessageID
+		botAPI.Send(msg)
+	case "🚽 WC Big":
+		request := model.UserRequest{
+			ChatID:      chatIdStr,
+			RequestType: "🚽 WC Big",
+			StartTime:   time.Now().Format("15:04:05"), // Current time as start time
+			Status:      "pending",
+			AccountName: Username,
+		}
+		_, err := b.Repo.SaveRequest(&request)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+
+		msg := tgbotapi.NewMessage(botGroupID, Username+" :  [ 🚽 WC Big ], 🕗 Time: "+formattedTime)
+		msg.ReplyMarkup = message.MessageID
+		botAPI.Send(msg)
+	case "🚾 WC Small":
+		request := model.UserRequest{
+			ChatID:      chatIdStr,
+			RequestType: "🚾 WC Small",
+			StartTime:   time.Now().Format("15:04:05"), // Current time as start time
+			Status:      "pending",
+
+			AccountName: Username,
+		}
+		_, err := b.Repo.SaveRequest(&request)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+
+		msg := tgbotapi.NewMessage(botGroupID, Username+" :  [ 🚾 WC Small], 🕗 Time: "+formattedTime)
+		msg.ReplyToMessageID = message.MessageID
+		botAPI.Send(msg)
+	case "⬅ Back":
+		requestData, err := b.Repo.FilterRequestOne(chatId)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+		// Set EndTime as the current time (time.Now())
+		endTime := time.Now()
+		endTimeStr := endTime.Format("15:04:05")
+
+		fmt.Println("Back Event", requestData)
+		referenceDate := "2006-01-02"
+		startTimeParsed, _ := time.Parse("2006-01-02 15:04:05", referenceDate+" "+requestData.StartTime)
+		endTimeParsed, _ := time.Parse("2006-01-02 15:04:05", referenceDate+" "+endTimeStr)
+		totalTime := endTimeParsed.Sub(startTimeParsed)
+		totalTimeMinutes := float64(totalTime.Minutes()) // Convert to minutes as an integer
+
+		// Filter Allow time
+		filter, errf := b.Repo.FilterRequestSetting(requestData.RequestType)
+		if errf != nil {
+			log.Println("Failed to acknowledge callback query:", errf)
+		}
+		var Messagetxt string
+		if totalTimeMinutes > filter.TimeRest {
+			excessMinutes := float64(totalTimeMinutes - filter.TimeRest) // Convert excess to integer
+			Messagetxt = fmt.Sprintf("⚠️ Warning: %.2f minutes", excessMinutes)
+		} else {
+			Messagetxt = " "
+		}
+		request := model.UserRequest{
+			ID:          requestData.ID,
+			ChatID:      requestData.ChatID,
+			AccountName: requestData.AccountName,
+			StartTime:   requestData.StartTime,
+			EndTime:     time.Now().Format("15:04:05"), // Current time as start time
+			Status:      "finished",
+			AllowTime:   filter.TimeRest,
+			TotalTime:   totalTimeMinutes,
+			RequestType: requestData.RequestType, // Default status
+			Message:     Messagetxt,
+			CreatedAt:   requestData.CreatedAt,
+		}
+		_, err = b.Repo.SaveRequest(&request)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+		msg := tgbotapi.NewMessage(botGroupID, Username+" : 🔙  time [ "+requestData.RequestType+" ], 🕗 Time: "+formattedTime+", "+Messagetxt)
+		msg.ReplyToMessageID = message.MessageID
+		botAPI.Send(msg)
+
+	}
+	b.initKeyBoard(botAPI, message)
+}
+
+// handleCallbackQuery handles button clicks
+func (b *Bot) handleCallbackQuery(botAPI *tgbotapi.BotAPI, callbackQuery *tgbotapi.CallbackQuery, botGroupID int64) {
+	var Username = callbackQuery.From.FirstName + " " + callbackQuery.From.LastName
+	var chatId = callbackQuery.Message.From.ID
+	currentTime := time.Now()
+	chatIdStr := strconv.FormatInt(chatId, 10)
+	formattedTime := currentTime.Format("15:04:05")
+
+	// Acknowledge the callback query with an alert
+	switch callbackQuery.Data {
+	case "📌 Pin":
+
+	case "🍽 Eat":
+		request := model.UserRequest{
+			ChatID:      chatIdStr,
+			RequestType: "🍽 Eat",
+			StartTime:   time.Now().Format("15:04:05"), // Current time as start time
+			Status:      "pending",
+
+			AccountName: Username,
+		}
+		_, err := b.Repo.SaveRequest(&request)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+
+		callback := tgbotapi.NewCallback(callbackQuery.ID, "✅ Request has been confirmed!")
+		callback.ShowAlert = true // Display as a popup alert
+		if _, err := botAPI.Request(callback); err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+
+		msg := tgbotapi.NewMessage(botGroupID, Username+" :  [ 🍽 Eat ], 🕗 Time: "+formattedTime)
+		botAPI.Send(msg)
+	case "🚬 Smoke":
+		request := model.UserRequest{
+			ChatID:      chatIdStr,
+			RequestType: "🚬 Smoke",
+			StartTime:   time.Now().Format("15:04:05"), // Current time as start time
+			Status:      "pending",
+			AccountName: Username,
+		}
+		_, err := b.Repo.SaveRequest(&request)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+
+		callback := tgbotapi.NewCallback(callbackQuery.ID, "✅ Request has been confirmed!")
+		callback.ShowAlert = true // Display as a popup alert
+		if _, err := botAPI.Request(callback); err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+
+		msg := tgbotapi.NewMessage(botGroupID, Username+" :  [ 🚬 Smoke ], 🕗 Time: "+formattedTime)
+		botAPI.Send(msg)
+	case "🚽 WC Big":
+		request := model.UserRequest{
+			ChatID:      chatIdStr,
+			RequestType: "🚽 WC Big",
+			StartTime:   time.Now().Format("15:04:05"), // Current time as start time
+			Status:      "pending",
+			AccountName: Username,
+		}
+		_, err := b.Repo.SaveRequest(&request)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+		callback := tgbotapi.NewCallback(callbackQuery.ID, "✅ Request has been confirmed!")
+		callback.ShowAlert = true // Display as a popup alert
+		if _, err := botAPI.Request(callback); err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+
+		msg := tgbotapi.NewMessage(botGroupID, Username+" :  [ 🚽 WC Big ], 🕗 Time: "+formattedTime)
+		botAPI.Send(msg)
+	case "🚾 WC Small":
+		request := model.UserRequest{
+			ChatID:      chatIdStr,
+			RequestType: "🚾 WC Small",
+			StartTime:   time.Now().Format("15:04:05"), // Current time as start time
+			Status:      "pending",
+
+			AccountName: Username,
+		}
+		_, err := b.Repo.SaveRequest(&request)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+
+		callback := tgbotapi.NewCallback(callbackQuery.ID, "✅ Request has been confirmed!")
+		callback.ShowAlert = true // Display as a popup alert
+		if _, err := botAPI.Request(callback); err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+
+		msg := tgbotapi.NewMessage(botGroupID, Username+" :  [ 🚾 WC Small], 🕗 Time: "+formattedTime)
+		botAPI.Send(msg)
+	case "back":
+		requestData, err := b.Repo.FilterRequestOne(chatId)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+		// Set EndTime as the current time (time.Now())
+		endTime := time.Now()
+		endTimeStr := endTime.Format("15:04:05")
+
+		fmt.Println("Back Event", requestData)
+		referenceDate := "2006-01-02"
+		startTimeParsed, _ := time.Parse("2006-01-02 15:04:05", referenceDate+" "+requestData.StartTime)
+		endTimeParsed, _ := time.Parse("2006-01-02 15:04:05", referenceDate+" "+endTimeStr)
+		totalTime := endTimeParsed.Sub(startTimeParsed)
+		totalTimeMinutes := float64(totalTime.Minutes()) // Convert to minutes as an integer
+
+		// Filter Allow time
+		filter, errf := b.Repo.FilterRequestSetting(requestData.RequestType)
+		if errf != nil {
+			log.Println("Failed to acknowledge callback query:", errf)
+		}
+		var Messagetxt string
+		if totalTimeMinutes > filter.TimeRest {
+			excessMinutes := float64(totalTimeMinutes - filter.TimeRest) // Convert excess to integer
+			Messagetxt = fmt.Sprintf("⚠️ Warning: %.2f minutes", excessMinutes)
+		} else {
+			Messagetxt = " "
+		}
+		request := model.UserRequest{
+			ID:          requestData.ID,
+			ChatID:      requestData.ChatID,
+			AccountName: requestData.AccountName,
+			StartTime:   requestData.StartTime,
+			EndTime:     time.Now().Format("15:04:05"), // Current time as start time
+			Status:      "finished",
+			AllowTime:   filter.TimeRest,
+			TotalTime:   totalTimeMinutes,
+			RequestType: requestData.RequestType, // Default status
+			Message:     Messagetxt,
+			CreatedAt:   requestData.CreatedAt,
+		}
+		_, err = b.Repo.SaveRequest(&request)
+		if err != nil {
+			log.Println("Failed to acknowledge callback query:", err)
+		}
+		msg := tgbotapi.NewMessage(botGroupID, Username+" : 🔙  time [ "+requestData.RequestType+" ], 🕗 Time: "+formattedTime+", "+Messagetxt)
+		botAPI.Send(msg)
+	default:
+		msg := tgbotapi.NewMessage(callbackQuery.Message.Chat.ID, "You selected: "+callbackQuery.Data)
+		botAPI.Send(msg)
+	}
+}
+
+// createInlineKeyboard creates an inline keyboard with buttons
+func (b *Bot) createInlineKeyboardButton() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(" 🍽 Eat", "eat"),
+			tgbotapi.NewInlineKeyboardButtonData(" 🚬 Smoke", "smoke"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🚽 WC Big", "wc_big"),
+			tgbotapi.NewInlineKeyboardButtonData("🚾 WC Small", "wc_small"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Back(返回)", "back"),
+		),
+	)
+}
+
+// Haversine function to calculate the distance between two points
+func Haversine(lat1, lon1, lat2, lon2 float64) float64 {
+	// Radius of the Earth in kilometers
+	r := 6371.0
+
+	// Convert degrees to radians
+	lat1 = degToRad(lat1)
+	lon1 = degToRad(lon1)
+	lat2 = degToRad(lat2)
+	lon2 = degToRad(lon2)
+
+	// Haversine formula
+	dlat := lat2 - lat1
+	dlon := lon2 - lon1
+	a := math.Sin(dlat/2)*math.Sin(dlat/2) + math.Cos(lat1)*math.Cos(lat2)*math.Sin(dlon/2)*math.Sin(dlon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	// Distance in kilometers
+	return r * c
+}
+
+// degToRad converts degrees to radians
+func degToRad(deg float64) float64 {
+	return deg * math.Pi / 180
+}
