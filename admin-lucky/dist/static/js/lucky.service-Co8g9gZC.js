@@ -1,0 +1,1 @@
+import{G as t}from"./index-SiRIT6sV.js";function a(e){return t({url:"/account/telegram-lucky/list",method:"get",params:e})}function u(e){return t({url:"/account/telegram-lucky/",method:"post",data:e})}function m(e){return t({url:"/account/telegram-lucky/update",method:"put",data:e})}export{a as g,u as s,m as u};

@@ -1,0 +1,11 @@
+/* The main function is that when vscode imports and uses aliases, it can automatically prompt the file path */
+{
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", ".vscode"]
+}

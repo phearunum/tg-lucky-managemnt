@@ -1,0 +1,76 @@
+.login {
+  //background: radial-gradient(200% 100% at bottom center, #f7f7b6, #e96f92, #1b2947);
+  //background: radial-gradient(220% 105% at top center, #1b2947 10%, #75517d 40%, #e96f92 65%, #f7f7b6);
+  background-attachment: fixed;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  //background-image: url('../assets/images/login-background.jpg');
+  background-size: cover;
+  background-color: rgb(227, 237, 252);
+}
+
+.title {
+  margin: 0px auto 30px auto;
+  text-align: center;
+  // color: #fff;
+}
+
+.login-form {
+  border-radius: 10px;
+  background: #ffffff;
+
+  width: 400px;
+  min-height: 40vh;
+  padding: 10px 15px 5px 15px;
+  position: relative;
+  border: 1px solid red($color: #000000);
+  box-shadow: rgba(0, 0, 0, 0.05) 0px 1px 2px 0px;
+  .input-icon {
+    height: 39px;
+    width: 14px;
+    margin-left: 0px;
+  }
+}
+
+.login-tip {
+  font-size: 13px;
+  text-align: center;
+  color: #bfbfbf;
+}
+
+.login-code {
+  width: 33%;
+  height: 40px;
+  float: right;
+
+  img {
+    cursor: pointer;
+    vertical-align: middle;
+  }
+}
+
+.el-login-footer {
+  height: 40px;
+  line-height: 40px;
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  text-align: center;
+  color: #fff;
+  font-family: Arial;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.login-code-img {
+  height: 40px;
+  padding-left: 12px;
+}
+.langSet {
+  position: absolute;
+  right: 20px;
+  top: 10px;
+}

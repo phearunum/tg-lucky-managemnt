@@ -1,0 +1,1 @@
+import{G as e}from"./index-SiRIT6sV.js";function r(t){return e({url:"/bucket/list",method:"get",params:t})}const c=t=>e({url:"/bucket",method:"post",data:t});function a(t){return e({url:"/bucket",method:"put",data:t})}function n(t){return e({url:`/bucket/list/${t}`,method:"get"})}function o(){return e({url:"/bucket/select",method:"get"})}export{n as a,o as b,c,r as g,a as u};

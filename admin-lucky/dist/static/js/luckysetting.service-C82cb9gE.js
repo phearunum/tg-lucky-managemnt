@@ -1,0 +1,1 @@
+import{G as n}from"./index-SiRIT6sV.js";function u(t){return n({url:"/account/lucky-setting-winner/list",method:"get",params:t})}function r(t){return n({url:"/account/lucky-setting-winner/",method:"post",data:t})}function a(t){return n({url:"/account/lucky-setting-winner/update",method:"put",data:t})}export{u as g,r as s,a as u};
