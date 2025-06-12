@@ -25,7 +25,7 @@ func (r *TelegramAccountRepository) GetTelegramAccountList(page int, limit int, 
 	var users []*models.TelegramAccount
 	var total int64
 	db := r.db
-	baseQuery := db.Model(&models.TelegramAccount{})
+	baseQuery := db.Model(&models.TelegramAccount{}).Order("created_at DESC")
 	if query != "" {
 		baseQuery = baseQuery.Where("phone_number LIKE ?", "%"+query+"%")
 		log.Printf("Generated SQL Query: %v", baseQuery.Statement.SQL.String())

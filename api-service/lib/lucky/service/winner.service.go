@@ -111,7 +111,8 @@ func (cs *WinnerService) WinnerServiceGetByChatID(requestDto dto.WinnerFilterDTO
 	return pointDTOs, nil
 }
 func (cs *WinnerService) WinnerServiceTaskExcuteGetWiner() bool {
-	success := cs.repo.TaskExcuteWinner()
+	//	success := cs.repo.TaskExcuteWinner()
+	success := cs.repo.TaskExcuteWinnerTask()
 	if !success {
 		utils.ErrorLog(nil, "Failed to execute winner task")
 		return false

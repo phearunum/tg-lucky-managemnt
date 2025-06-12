@@ -267,17 +267,17 @@ func (cc *WinnerController) TaskSendNotificationWinnerHandler(w http.ResponseWri
 	}
 
 	for _, winner := range winners {
-		//points := strconv.FormatFloat(winner.TotalPoints, 'f', 2, 64)
+		points := strconv.FormatFloat(winner.TotalPoints, 'f', 2, 64)
 		id, err := strconv.ParseInt(winner.ChatID, 10, 64)
 		if err != nil {
 			fmt.Printf("Invalid ChatID for user %s: %v\n", winner.Member.Username, err)
 			continue
 		}
-		message += fmt.Sprintf(" - <b>%s</b> <a href=\"tg://user?id=%d\">@%s</a> 🎁\n",
+		message += fmt.Sprintf(" - <b>%s</b> <a href=\"tg://user?id=%d\">@%s</a> 🎁 %s\n",
 			winner.Member.AccountName,
 			id,
 			winner.Member.Username,
-			//points,
+			points,
 		)
 	}
 	message += "\n " + luckysetting.Message

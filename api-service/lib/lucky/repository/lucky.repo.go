@@ -34,7 +34,7 @@ func (r *TelegramUserRepository) GetTelegramUserList(page, limit int, query stri
 		}
 	}
 	// Build base query
-	baseQuery := r.db.Model(&models.TelegramUsers{}).Order("created_at DESC")
+	baseQuery := r.db.Model(&models.TelegramUsers{}).Order("total_point DESC")
 	if query != "" {
 		baseQuery = baseQuery.Where("account_name LIKE ? OR username LIKE ? AND group_id in (?)", "%"+query+"%", "%"+query+"%", tg_group)
 	}

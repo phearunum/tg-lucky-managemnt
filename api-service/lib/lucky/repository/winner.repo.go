@@ -139,7 +139,7 @@ func (r *WinnerRepository) TaskExcuteWinner() bool {
 	var members []*models.TelegramUsers
 	utils.InfoLog(setting, "setting")
 	if setting.TotalWin < 0 {
-		setting.TotalWin = 5 // Set a default if negative
+		setting.TotalWin = 10 // Set a default if negative
 	}
 	errr := r.db.Order("total_point DESC").Limit(int(setting.TotalWin)).Find(&members).Error
 	if err != nil {
@@ -174,6 +174,73 @@ func (r *WinnerRepository) TaskExcuteWinner() bool {
 	}).Create(&winners).Error; err != nil {
 		utils.LoggerRepository(err, "Execute")
 		return false
+	}
+
+	return true
+}
+func (r *WinnerRepository) TaskExcuteWinnerTask() bool {
+	var settings []models.TelegramSettingWinner
+	err := r.db.
+		Where("status = ?", "collected").
+		Order("created_at DESC").
+		Find(&settings).Error
+
+	if err != nil {
+		utils.LoggerRepository(err, "TaskExcuteWinner: Failed to fetch Setting Lucky Winner")
+		return false
+	}
+
+	if len(settings) == 0 {
+		utils.InfoLog("No settings found, using default TotalWin=5", "TaskExcuteWinner")
+		return false
+	}
+
+	utils.InfoLog(settings, "setting")
+	for _, s := range settings {
+		utils.InfoLog(s, fmt.Sprintf("Processing Setting for Group: %s (TotalWin: %s)", s.GroupID, s.TotalWin))
+
+		var members []*models.TelegramUsers
+		//utils.InfoLog(s, "Setting Group")
+		errr := r.db.
+			Where("group_id = ?", s.GroupID).
+			Order("total_point DESC").
+			Limit(int(s.TotalWin)).
+			Find(&members).Error
+
+		if errr != nil {
+			utils.LoggerRepository(errr, "TaskExcuteWinner: Failed to fetch TelegramUsers")
+			continue
+		}
+
+		if len(members) == 0 {
+			utils.LoggerRepository(nil, "TaskExcuteWinner: No TelegramUsers found")
+			continue
+		}
+
+		var winners []models.LuckWinner
+		today := time.Now()
+		rankDate := today.Format("20060102")
+
+		for i, m := range members {
+			if m.TotalPoints > 0 {
+				winner := models.LuckWinner{
+					ChatID:      m.ChatID,
+					TotalPoints: m.TotalPoints,
+					Exprired:    "no",
+					Status:      "active",
+					RankID:      fmt.Sprintf("%s_%s_%d", rankDate, s.GroupID, i),
+				}
+				winners = append(winners, winner)
+			}
+		}
+
+		if err := r.db.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "rank_id"}},
+			UpdateAll: true,
+		}).Create(&winners).Error; err != nil {
+			utils.LoggerRepository(err, "Execute")
+			continue
+		}
 	}
 
 	return true
